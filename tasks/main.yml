@@ -1,0 +1,61 @@
+---
+# tasks file for pacemaker
+- name:
+  yum:
+    name:
+      - python3-devel
+      - ruby-devel
+      - gcc
+      - libffi-devel
+      - fontconfig
+      - coreutils
+      - rubygems
+      - gcc-c++
+      - wget
+      - pacemaker
+      - resource-agents
+      - pcs
+      - resource-agents
+      - corosync
+
+- name: remove from hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.0\.1\s+{{ inventory_hostname }}'
+    state: absent
+
+- name: start pcsd
+  ansible.builtin.systemd:
+    state: started
+    enabled: yes
+    name: pcsd
+
+- name: change shell for user hacluster
+  ansible.builtin.user:
+    name: hacluster
+    shell: /bin/bash
+    password: "$6$hmmmsalt$0UO8o27NLqx.cYLCGm7qZ5sQEAUEbKmBRx1fyK/UAxCp3p2XwXCPJixWtrxr6qsxxvam3w/oIh85FAzz3NHm7/" 
+    update_password: always
+
+- name: cluster auth
+  ansible.builtin.command: pcs cluster auth centos7-1 centos7-2 centos7-3 -u hacluster -p hacluster
+
+- name: cluster setup
+  ansible.builtin.command: pcs cluster setup --force --name HACLUSTER centos7-1 centos7-2 centos7-3
+
+- name: enable all
+  ansible.builtin.command: pcs cluster enable --all
+
+- name: start cluster
+  ansible.builtin.command: pcs cluster start --all
+
+- name: disable stonith
+  ansible.builtin.command: pcs property set stonith-enabled=false
+
+- name: create VIP
+  ansible.builtin.command: pcs resource create VIP ocf:heartbeat:IPaddr2 nic=eth0 ip=10.10.4.30 cidr_netmask=24 op monitor interval=5s --disabled --group HACLUSTER
+  when: inventory_hostname == "centos7-1" 
+
+- name: enable VIP
+  ansible.builtin.command: pcs resource enable VIP
+  when: inventory_hostname == "centos7-1" 
